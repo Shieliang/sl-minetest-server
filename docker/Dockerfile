@@ -5,8 +5,8 @@ FROM alpine:3.20
 RUN apk update && \
     apk add --no-cache minetest minetest-server
 
-# 👇 修复点：显式创建 minetest 用户组 (-S) 和系统用户 (-S)，并将其加入该组
-RUN addgroup -S minetest && adduser -S minetest -G minetest
+# 👇 终极修复点：使用 -D 隐式且安全地一键创建 user 和同名 group
+RUN adduser -D minetest
 
 # 创建运行游戏所需的目录并赋予权限
 RUN mkdir -p /var/lib/minetest/.minetest/worlds/world && \
