@@ -1,0 +1,63 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'SL-minetest-server 2.0: Shared Storage Stack (EFS)'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: sl-minetest
+    Description: The base name for all resources in this project
+
+Resources:
+  # 1. 创建 EFS 专属的安全组 (Security Group)
+  EfsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow NFS traffic (TCP 2049) from within the VPC
+      # 使用更稳定的跨栈引用语法
+      VpcId:
+        Fn::ImportValue: !Sub "${ProjectName}-VpcId"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          CidrIp: 10.0.0.0/16 
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-efs-sg
+
+  # 2. 创建 EFS 文件系统
+  FileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      PerformanceMode: generalPurpose 
+      Encrypted: true                 
+      FileSystemTags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-efs
+
+  # 3. 创建挂载目标 (Mount Targets)
+  MountTarget1:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref FileSystem
+      SubnetId:
+        Fn::ImportValue: !Sub "${ProjectName}-PrivateSubnet1"
+      SecurityGroups:
+        - !Ref EfsSecurityGroup
+
+  MountTarget2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref FileSystem
+      SubnetId:
+        Fn::ImportValue: !Sub "${ProjectName}-PrivateSubnet2"
+      SecurityGroups:
+        - !Ref EfsSecurityGroup
+
+# 4. 导出 EFS 的 ID
+Outputs:
+  FileSystemId:
+    Description: ID of the EFS File System
+    Value: !Ref FileSystem
+    Export:
+      Name: !Sub ${ProjectName}-FileSystemId

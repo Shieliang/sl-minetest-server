@@ -1,0 +1,96 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'SL-minetest-server 2.0: EKS Cluster and Node Group'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: sl-minetest
+    Description: The base name for all resources in this project
+
+Resources:
+  # 1. 集群的 IAM 角色 (Control Plane Role)
+  EksClusterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: eks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+
+  # 2. EKS 集群 (Control Plane)
+  EksCluster:
+    Type: AWS::EKS::Cluster
+    Properties:
+      Name: !Sub ${ProjectName}-cluster
+      Version: "1.30" # 使用较新的稳定版本
+      RoleArn: !GetAtt EksClusterRole.Arn
+      ResourcesVpcConfig:
+        # 控制平面与私有子网通信
+        SubnetIds:
+          - !ImportValue 
+            'Fn::Sub': '${ProjectName}-PrivateSubnet1'
+          - !ImportValue 
+            'Fn::Sub': '${ProjectName}-PrivateSubnet2'
+        # 允许你从本地电脑通过公网使用 kubectl 连接集群
+        EndpointPublicAccess: true
+        EndpointPrivateAccess: true
+
+  # 3. 节点组的 IAM 角色 (Worker Node Role)
+  NodeGroupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+        - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+        # 【关键点】让节点组里的 EC2 有权限挂载我们之前创建的 EFS
+        - arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy
+
+  # 4. 托管节点组 (Managed Node Group)
+  NodeGroup:
+    Type: AWS::EKS::Nodegroup
+    DependsOn: EksCluster
+    Properties:
+      ClusterName: !Ref EksCluster
+      NodegroupName: !Sub ${ProjectName}-node-group
+      NodeRole: !GetAtt NodeGroupRole.Arn
+      Subnets:
+        # 将节点放在私有子网，提高安全性
+        - !ImportValue 
+          'Fn::Sub': '${ProjectName}-PrivateSubnet1'
+        - !ImportValue 
+          'Fn::Sub': '${ProjectName}-PrivateSubnet2'
+      InstanceTypes:
+        - t3.medium # 至少 2vCPU/4GB 内存，确保游戏服务器和监控组件够用
+      ScalingConfig:
+        MinSize: 1
+        DesiredSize: 1
+        MaxSize: 2
+
+  # 5. 自动安装 EFS CSI Driver 插件
+  EfsCsiAddon:
+    Type: AWS::EKS::Addon
+    DependsOn: NodeGroup
+    Properties:
+      ClusterName: !Ref EksCluster
+      AddonName: aws-efs-csi-driver
+      ResolveConflicts: OVERWRITE
+
+Outputs:
+  ClusterName:
+    Description: The name of the EKS cluster
+    Value: !Ref EksCluster
+    Export:
+      Name: !Sub ${ProjectName}-ClusterName
