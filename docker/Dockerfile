@@ -1,11 +1,14 @@
-# 锁定 Alpine 3.20 版本，确保 minetest 软件包存在 (DevOps 最佳实践)
+# 锁定 Alpine 3.20 版本
 FROM alpine:3.20
 
 # 安装 Minetest Server
 RUN apk update && \
     apk add --no-cache minetest minetest-server
 
-# 创建运行游戏所需的用户组和目录
+# 👇 修复点：显式创建 minetest 用户组 (-S) 和系统用户 (-S)，并将其加入该组
+RUN addgroup -S minetest && adduser -S minetest -G minetest
+
+# 创建运行游戏所需的目录并赋予权限
 RUN mkdir -p /var/lib/minetest/.minetest/worlds/world && \
     chown -R minetest:minetest /var/lib/minetest
 
