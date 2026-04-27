@@ -1,0 +1,92 @@
+# ==========================================
+# 1. 存储配置 (StorageClass, PV, PVC)
+# ==========================================
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: efs-sc
+provisioner: efs.csi.aws.com
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: minetest-efs-pv
+spec:
+  capacity:
+    storage: 5Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: efs-sc
+  csi:
+    driver: efs.csi.aws.com
+    # 👇👇👇 替换为你的 EFS FileSystemId (例如 fs-01234abcd) 👇👇👇
+    volumeHandle: fs-0e47d65390893fdaf
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minetest-efs-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: efs-sc
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+# ==========================================
+# 2. 游戏服务器工作负载 (StatefulSet)
+# ==========================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: minetest-server
+spec:
+  serviceName: minetest-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minetest
+  template:
+    metadata:
+      labels:
+        app: minetest
+    spec:
+      containers:
+      - name: minetest
+        # 👇👇👇 替换为你的 ECR 完整 URI 👇👇👇
+        image: 987762561422.dkr.ecr.us-east-1.amazonaws.com/sl-minetest-server@sha256:e41bd8bef15cb189e822e031812dc6fdb92b99fd7bebeee903e435f11a5140ae
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 30000
+          protocol: UDP
+        volumeMounts:
+        - name: game-data
+          mountPath: /var/lib/minetest/.minetest/worlds/world
+      volumes:
+      - name: game-data
+        persistentVolumeClaim:
+          claimName: minetest-efs-pvc
+
+---
+# ==========================================
+# 3. 外部网络入口 (Network Load Balancer)
+# ==========================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: minetest-nlb
+  annotations:
+    # 强制 AWS 使用 NLB，因为我们要转发 UDP 流量
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 30000
+      targetPort: 30000
+      protocol: UDP
+  selector:
+    app: minetest
