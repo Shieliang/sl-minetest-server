@@ -1,5 +1,5 @@
-# 使用超轻量级的 Alpine Linux 作为基础镜像
-FROM alpine:latest
+# 锁定 Alpine 3.20 版本，确保 minetest 软件包存在 (DevOps 最佳实践)
+FROM alpine:3.20
 
 # 安装 Minetest Server
 RUN apk update && \
