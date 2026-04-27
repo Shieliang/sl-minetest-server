@@ -15,7 +15,6 @@ RUN mkdir -p /usr/share/minetest/games/minetest_game && \
     rm -rf /tmp/game.zip /tmp/minetest_game-master
 
 # 保持原来的用户设置
-RUN adduser -D minetest
 RUN mkdir -p /var/lib/minetest/.minetest/worlds/world && \
     chown -R minetest: /var/lib/minetest
 
